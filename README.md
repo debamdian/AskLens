@@ -50,12 +50,11 @@ cp .env.example .env
 ```
 
 ### 2. Start PostgreSQL + Services via Docker Compose
-```bash
-docker compose up -d db
+```powershell
+docker compose up -d postgres
 # Seed 24 months of realistic e-commerce data (including the Gujarat Q3/Q4 dip)
-cd api
-pip install -r requirements.txt
-python seed/seed_warehouse.py
+pip install -e "./api[dev]"
+$env:PYTHONPATH="api"; python api/seed/seed_warehouse.py
 ```
 
 ### 3. Run Backend & Frontend Locally
