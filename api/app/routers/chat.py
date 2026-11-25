@@ -26,6 +26,9 @@ from app.schema.retriever import schema_retriever
 from app.analysis.chart_recommender import chart_recommender
 from app.analysis.stats import period_over_period_comparison, detect_anomalies
 from app.memory.manager import memory_manager
+from app.security.rbac import rbac_manager
+from app.security.pii_masking import mask_rows
+from app.security.audit import audit_logger
 
 router = APIRouter(prefix="/api/v1/chat", tags=["Chat & Streaming"])
 
@@ -34,6 +37,9 @@ class ChatQueryRequest(BaseModel):
     query: str
     session_id: Optional[str] = "default-session"
     voice_transcript: Optional[str] = None
+    role: Optional[str] = "analyst"
+    user_email: Optional[str] = None
+    region_id: Optional[int] = None
 
 
 class GoldenPromotionRequest(BaseModel):
@@ -42,8 +48,14 @@ class GoldenPromotionRequest(BaseModel):
     category: Optional[str] = "User Promoted"
 
 
-async def generate_chat_stream(user_query: str, session_id: str) -> AsyncGenerator[dict, None]:
+async def generate_chat_stream(
+    user_query: str,
+    session_id: str,
+    role: str = "analyst",
+    user_email: Optional[str] = None,
+) -> AsyncGenerator[dict, None]:
     """Generates server-sent events for full analysis pipeline."""
+    policy = rbac_manager.get_policy(role)
     try:
         # Step 0: Intent Routing & Ambiguity Check
         yield {
@@ -185,13 +197,15 @@ async def generate_chat_stream(user_query: str, session_id: str) -> AsyncGenerat
                     "data": json.dumps({"sql": generated_sql, "corrected": True, "retries": retries})
                 }
 
+            masked_rows = mask_rows(query_result.rows[:50], mask_pii=policy.mask_pii)
             rows_data = {
                 "columns": query_result.columns,
-                "rows": query_result.rows[:50],
+                "rows": masked_rows,
                 "total_rows": query_result.row_count,
                 "execution_time_ms": query_result.execution_time_ms,
                 "cost_estimate": query_result.cost_estimate
             }
+            execution_status = "success"
         except Exception as err:
             rows_data = {
                 "columns": ["status", "error"],
@@ -200,6 +214,7 @@ async def generate_chat_stream(user_query: str, session_id: str) -> AsyncGenerat
                 "execution_time_ms": 0.0,
                 "cost_estimate": None
             }
+            execution_status = "execution_error"
 
         yield {
             "event": "rows",
@@ -252,12 +267,22 @@ async def generate_chat_stream(user_query: str, session_id: str) -> AsyncGenerat
             "data": json.dumps({"text": insight_text})
         }
 
-        # Update Conversation Memory
+        # Update Conversation Memory & Audit Log
         memory_manager.add_turn(
             session_id=session_id,
             user_query=user_query,
             generated_sql=generated_sql,
             insight=insight_text
+        )
+        await audit_logger.log_event(
+            question=user_query,
+            execution_status=execution_status,
+            role=policy.name,
+            user_email=user_email,
+            generated_sql=generated_sql,
+            rows_returned=rows_data["total_rows"],
+            latency_ms=int(rows_data["execution_time_ms"] or 0),
+            cost_estimate=rows_data["cost_estimate"],
         )
 
         # Step 8: Final Complete Event
@@ -289,7 +314,14 @@ async def chat_stream_endpoint(request: ChatQueryRequest):
         raise HTTPException(status_code=400, detail="Query cannot be empty.")
 
     session_id = request.session_id or "default-session"
-    return EventSourceResponse(generate_chat_stream(query_text, session_id))
+    return EventSourceResponse(
+        generate_chat_stream(
+            query_text,
+            session_id,
+            role=request.role or "analyst",
+            user_email=request.user_email,
+        )
+    )
 
 
 @router.post("/promote-golden")
