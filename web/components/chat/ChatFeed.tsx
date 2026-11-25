@@ -162,20 +162,6 @@ export const ChatFeed: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }
     }
   };
 
-  const handleVoiceToggle = () => {
-    // MediaRecorder voice flow: triggers in Phase 2 with faster-whisper
-    if (!isRecording) {
-      setIsRecording(true);
-      // Simulated voice prompt demo for Phase 1
-      setTimeout(() => {
-        setIsRecording(false);
-        setInput("Why did sales drop in Gujarat last quarter?");
-      }, 1500);
-    } else {
-      setIsRecording(false);
-    }
-  };
-
   return (
     <div className="flex-1 flex flex-col h-screen bg-slate-50 dark:bg-slate-950">
       {/* Top Bar */}
@@ -280,11 +266,7 @@ export const ChatFeed: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={
-              isRecording
-                ? "Listening... (Simulating: Why did sales drop in Gujarat?)"
-                : "Ask about trends, customer retention, sales drop, or product performance..."
-            }
+            placeholder="Ask about trends, customer retention, sales drop, or product performance..."
             className="flex-1 bg-transparent px-2 text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none"
             disabled={isStreaming}
           />

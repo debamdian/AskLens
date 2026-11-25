@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import {
   Database,
   BookOpen,
@@ -11,6 +12,7 @@ import {
   ChevronRight,
   Sun,
   Moon,
+  ShieldCheck,
 } from "lucide-react";
 
 interface SidebarProps {
@@ -213,13 +215,25 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNewChat, onSelectSampleQuery
         )}
       </div>
 
-      {/* Role / User indicator */}
-      <div className="p-3 border-t border-slate-800 bg-slate-950/50 flex items-center justify-between text-xs text-slate-400">
-        <div className="flex items-center space-x-2">
-          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-          <span>Role: Senior Analyst</span>
+      {/* Role / User indicator & Admin Link */}
+      <div className="p-3 border-t border-slate-800 bg-slate-950/50 space-y-2 text-xs text-slate-400">
+        <Link
+          href="/admin"
+          className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white transition-colors"
+        >
+          <span className="flex items-center space-x-2">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Admin & Audit Console</span>
+          </span>
+          <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
+        </Link>
+        <div className="flex items-center justify-between px-1">
+          <div className="flex items-center space-x-2">
+            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+            <span>Role: Senior Analyst</span>
+          </div>
+          <span className="font-mono text-[10px] text-slate-500">PostgreSQL</span>
         </div>
-        <span className="font-mono text-[10px] text-slate-500">PostgreSQL</span>
       </div>
     </aside>
   );
