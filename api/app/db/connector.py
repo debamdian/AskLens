@@ -78,8 +78,14 @@ class PostgresConnector(BaseConnector):
                     return float(plan[0].get("Plan", {}).get("Total Cost", 0.0))
                 return 0.0
 
-    def execute_read_only(self, sql: str, row_limit: Optional[int] = None) -> QueryResult:
-        """Executes query within a READ ONLY transaction with timeout and row cap."""
+    def execute_read_only(
+        self,
+        sql: str,
+        row_limit: Optional[int] = None,
+        role_name: Optional[str] = None,
+        region_id: Optional[int] = None,
+    ) -> QueryResult:
+        """Executes query within a READ ONLY transaction with timeout, RLS context, and row cap."""
         limit = row_limit or self.default_row_limit
         start_time = time.perf_counter()
 
@@ -90,6 +96,11 @@ class PostgresConnector(BaseConnector):
                 try:
                     # Enforce strict statement timeout
                     cur.execute(f"SET LOCAL statement_timeout = '{self.timeout_ms}ms';")
+                    # Apply Row-Level Security (RLS) session context
+                    if role_name:
+                        cur.execute("SELECT set_config('app.current_role', %s, true);", (role_name,))
+                    if region_id is not None:
+                        cur.execute("SELECT set_config('app.current_region_id', %s, true);", (str(region_id),))
                     cur.execute(sql)
 
                     # Fetch rows up to limit + 1 to detect truncation

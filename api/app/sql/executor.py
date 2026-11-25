@@ -23,7 +23,12 @@ class SafeSQLExecutor:
         self.validator = validator or SQLValidator()
         self.connector = connector or warehouse_connector
 
-    def execute(self, raw_sql: str, role_name: Optional[str] = None) -> QueryResult:
+    def execute(
+        self,
+        raw_sql: str,
+        role_name: Optional[str] = None,
+        region_id: Optional[int] = None,
+    ) -> QueryResult:
         """Full pipeline: AST validation -> Cost Estimation -> Read-only DB Execution."""
         # 1. AST Validation, RBAC enforcement & LIMIT injection
         sanitized_sql = self.validator.validate_and_sanitize(raw_sql, role_name=role_name)
@@ -42,8 +47,10 @@ class SafeSQLExecutor:
             logger.warning(f"Cost estimation skipped or failed: {e}")
             estimated_cost = None
 
-        # 3. Read-only Execution
-        result = self.connector.execute_read_only(sanitized_sql)
+        # 3. Read-only Execution with RLS context
+        result = self.connector.execute_read_only(
+            sanitized_sql, role_name=role_name, region_id=region_id
+        )
         result.cost_estimate = estimated_cost
         return result
 

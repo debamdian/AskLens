@@ -202,3 +202,35 @@ REVOKE ALL ON SCHEMA app FROM warehouse_readonly;
 REVOKE ALL ON SCHEMA public FROM warehouse_readonly;
 REVOKE ALL ON ALL TABLES IN SCHEMA app FROM warehouse_readonly;
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM warehouse_readonly;
+
+-- =============================================================================
+-- Row-Level Security (RLS) Policies for Regional Isolation
+-- =============================================================================
+ALTER TABLE warehouse.orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE warehouse.customers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE warehouse.marketing_spend ENABLE ROW LEVEL SECURITY;
+
+-- Policy: Allow all rows unless app.current_role = 'sales_manager' with assigned region
+CREATE POLICY orders_rls_policy ON warehouse.orders
+    FOR SELECT
+    USING (
+        COALESCE(current_setting('app.current_role', true), '') <> 'sales_manager'
+        OR COALESCE(current_setting('app.current_region_id', true), '') = ''
+        OR region_id = current_setting('app.current_region_id', true)::INT
+    );
+
+CREATE POLICY customers_rls_policy ON warehouse.customers
+    FOR SELECT
+    USING (
+        COALESCE(current_setting('app.current_role', true), '') <> 'sales_manager'
+        OR COALESCE(current_setting('app.current_region_id', true), '') = ''
+        OR region_id = current_setting('app.current_region_id', true)::INT
+    );
+
+CREATE POLICY marketing_rls_policy ON warehouse.marketing_spend
+    FOR SELECT
+    USING (
+        COALESCE(current_setting('app.current_role', true), '') <> 'sales_manager'
+        OR COALESCE(current_setting('app.current_region_id', true), '') = ''
+        OR region_id = current_setting('app.current_region_id', true)::INT
+    );
