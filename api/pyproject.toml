@@ -6,7 +6,6 @@ build-backend = "setuptools.build_meta"
 name = "asklens-api"
 version = "0.1.0"
 description = "AI Data Analyst Platform - FastAPI Backend"
-readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115.0",
@@ -41,3 +40,7 @@ dev = [
     "ruff>=0.6.9",
     "mypy>=1.11.2"
 ]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]

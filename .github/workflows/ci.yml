@@ -53,7 +53,9 @@ jobs:
         run: npm ci --legacy-peer-deps
 
       - name: TypeScript typecheck
-        run: npm run typecheck
+        run: |
+          npx next typegen
+          npm run typecheck
 
       - name: Vitest smoke tests
         run: npm test
