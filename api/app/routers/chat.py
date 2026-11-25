@@ -3,9 +3,9 @@
 Handles text and voice analysis queries, streaming incremental progress events:
 - event: status (e.g. Planning, Generating SQL, Running Query, Synthesizing)
 - event: plan (Analysis steps)
-- event: sql (Generated and validated SQL query)
+- event: sql (Generated, self-corrected, and AST validated SQL query)
 - event: rows (Query result preview and column metadata)
-- event: chart (Chart specification JSON for ECharts/Plotly)
+- event: chart (Rule-based chart specification JSON for ECharts)
 - event: insight (Natural language explanation and business insights)
 - event: final (Completed state with follow-up suggestions)
 """
@@ -18,8 +18,11 @@ from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from app.sql.generator import sql_generator
-from app.sql.executor import safe_executor
-from app.sql.validator import SQLValidationError
+from app.sql.self_correct import self_corrector
+from app.schema.semantic import semantic_layer
+from app.schema.retriever import schema_retriever
+from app.analysis.chart_recommender import chart_recommender
+from app.memory.manager import memory_manager
 from app.llm.factory import llm_service
 
 router = APIRouter(prefix="/api/v1/chat", tags=["Chat & Streaming"])
@@ -27,27 +30,40 @@ router = APIRouter(prefix="/api/v1/chat", tags=["Chat & Streaming"])
 
 class ChatQueryRequest(BaseModel):
     query: str
-    session_id: Optional[str] = None
+    session_id: Optional[str] = "default-session"
     voice_transcript: Optional[str] = None
 
 
-async def generate_chat_stream(user_query: str) -> AsyncGenerator[dict, None]:
+class GoldenPromotionRequest(BaseModel):
+    question: str
+    sql: str
+    category: Optional[str] = "User Promoted"
+
+
+async def generate_chat_stream(user_query: str, session_id: str) -> AsyncGenerator[dict, None]:
     """Generates server-sent events for real-time progress and final synthesis."""
     try:
-        # Step 1: Initial Planning event
+        # Step 1: Initial Planning event with semantic context retrieval
         yield {
             "event": "status",
-            "data": json.dumps({"status": "planning", "message": "Analyzing question and formulating analysis plan..."})
+            "data": json.dumps({"status": "planning", "message": "Analyzing question & retrieving business glossary..."})
         }
         await asyncio.sleep(0.05)
+
+        semantic_context = semantic_layer.get_relevant_context(user_query)
+        few_shot_examples = schema_retriever.get_few_shot_examples(user_query)
+        memory_context = memory_manager.get_conversation_history_context(session_id)
+
+        combined_context = f"{semantic_context}\n\n{few_shot_examples}\n\n{memory_context}"
 
         plan = {
             "steps": [
                 f"Identify target business metrics for question: '{user_query}'",
-                "Retrieve schema and construct parameterized PostgreSQL query",
+                "Retrieve schema context & semantic definitions",
+                "Construct parameterized PostgreSQL query with few-shot guidance",
                 "Validate query syntax, AST safety, and execution cost",
-                "Execute query in read-only transaction on warehouse schema",
-                "Synthesize findings with executive summary and follow-up recommendations"
+                "Execute query in read-only transaction on warehouse schema (with self-correction fallback)",
+                "Recommend dynamic chart visualization & synthesize senior analyst insight"
             ]
         }
         yield {
@@ -55,20 +71,23 @@ async def generate_chat_stream(user_query: str) -> AsyncGenerator[dict, None]:
             "data": json.dumps(plan)
         }
 
-        # Step 2: SQL Generation
+        # Step 2: SQL Generation with rich semantic & few-shot context
         yield {
             "event": "status",
-            "data": json.dumps({"status": "generating_sql", "message": "Drafting SQL query against warehouse schema..."})
+            "data": json.dumps({"status": "generating_sql", "message": "Drafting context-aware SQL query..."})
         }
         await asyncio.sleep(0.05)
 
         try:
-            generated_sql = sql_generator.generate_sql(user_query)
+            generated_sql = sql_generator.generate_sql(
+                question=user_query,
+                additional_context=combined_context
+            )
         except Exception as e:
-            # Fallback sample query if LLM is offline
+            # Fallback sample query if LLM is temporarily unreachable
             generated_sql = (
                 "SELECT r.name AS region, COUNT(o.order_id) AS total_orders, "
-                "SUM(o.total_amount) AS total_sales, ROUND(AVG(o.total_amount), 2) AS avg_order_value "
+                "COALESCE(SUM(o.total_amount), 0) AS total_sales, ROUND(AVG(o.total_amount), 2) AS avg_order_value "
                 "FROM warehouse.orders o "
                 "JOIN warehouse.regions r ON o.region_id = r.region_id "
                 "WHERE o.status = 'completed' "
@@ -80,7 +99,7 @@ async def generate_chat_stream(user_query: str) -> AsyncGenerator[dict, None]:
             "data": json.dumps({"sql": generated_sql})
         }
 
-        # Step 3: SQL Validation & Execution
+        # Step 3: SQL Execution with Automated Self-Correction Loop
         yield {
             "event": "status",
             "data": json.dumps({"status": "executing", "message": "Validating AST safety and executing query..."})
@@ -88,7 +107,18 @@ async def generate_chat_stream(user_query: str) -> AsyncGenerator[dict, None]:
         await asyncio.sleep(0.05)
 
         try:
-            query_result = safe_executor.execute(generated_sql)
+            query_result, final_sql, retries = self_corrector.execute_with_self_correction(
+                question=user_query,
+                initial_sql=generated_sql
+            )
+            # If self-correction adjusted the query, stream the updated SQL
+            if final_sql != generated_sql:
+                generated_sql = final_sql
+                yield {
+                    "event": "sql",
+                    "data": json.dumps({"sql": generated_sql, "corrected": True, "retries": retries})
+                }
+
             rows_data = {
                 "columns": query_result.columns,
                 "rows": query_result.rows[:50],  # preview first 50
@@ -110,28 +140,14 @@ async def generate_chat_stream(user_query: str) -> AsyncGenerator[dict, None]:
             "data": json.dumps(rows_data)
         }
 
-        # Step 4: Chart Recommender / Spec
+        # Step 4: Rule-Based Chart Spec Generator
         chart_spec = None
         if rows_data["total_rows"] > 0 and len(rows_data["columns"]) >= 2:
-            x_col = rows_data["columns"][0]
-            y_col = rows_data["columns"][1]
-            chart_spec = {
-                "chart_type": "bar",
-                "title": f"Distribution by {x_col.replace('_', ' ').title()}",
-                "xAxis": {
-                    "type": "category",
-                    "data": [str(r.get(x_col, "")) for r in rows_data["rows"][:15]]
-                },
-                "yAxis": {"type": "value"},
-                "series": [
-                    {
-                        "name": y_col.replace('_', ' ').title(),
-                        "type": "bar",
-                        "data": [r.get(y_col, 0) for r in rows_data["rows"][:15]],
-                        "itemStyle": {"color": "#3b82f6"}
-                    }
-                ]
-            }
+            chart_spec = chart_recommender.recommend(
+                columns=rows_data["columns"],
+                rows=rows_data["rows"],
+                title_hint=f"Distribution for: '{user_query}'"
+            )
 
         if chart_spec:
             yield {
@@ -142,32 +158,48 @@ async def generate_chat_stream(user_query: str) -> AsyncGenerator[dict, None]:
         # Step 5: Insight Synthesis
         yield {
             "event": "status",
-            "data": json.dumps({"status": "synthesizing", "message": "Drafting senior analyst insight..."})
+            "data": json.dumps({"status": "synthesizing", "message": "Synthesizing executive findings..."})
         }
 
-        synthesis_prompt = f"""You are a Senior Data Analyst. Answer the user's question clearly using the query results provided below.
+        synthesis_prompt = f"""You are a Principal Data Analyst. Provide an executive summary of the query results below for the user.
 
-User Question: {user_query}
-Executed SQL:
+USER QUESTION:
+{user_query}
+
+EXECUTED SQL:
+```sql
 {generated_sql}
+```
 
-Query Results:
+DATA RESULTS PREVIEW:
 {json.dumps(rows_data["rows"][:10], default=str)}
 
-Format your response with:
-1. **Headline Finding**: 1 strong conclusion with key metric.
-2. **Key Data Points**: 2-4 supporting numbers/percentages.
-3. **Analyst Commentary**: Context, caveats, or potential root causes.
+STRUCTURE YOUR RESPONSE CLEARLY:
+1. **Headline Finding**: 1 decisive conclusion with key metrics.
+2. **Key Supporting Evidence**: 2-3 bullet points with specific percentages or amounts.
+3. **Analyst Commentary**: Context, root causes, or business recommendations.
 """
         try:
-            insight_text = llm_service.generate(prompt=synthesis_prompt, temperature=0.2)
+            insight_text = llm_service.generate(prompt=synthesis_prompt, temperature=0.1)
         except Exception:
-            insight_text = f"**Headline Finding**: The analysis returned {rows_data['total_rows']} records across the requested segments.\n\n- Primary driver: {rows_data['rows'][0] if rows_data['rows'] else 'N/A'}\n- Results have been validated against the warehouse schema."
+            insight_text = (
+                f"**Headline Finding**: The analysis returned {rows_data['total_rows']} records across requested segments.\n\n"
+                f"- Primary row metric: {rows_data['rows'][0] if rows_data['rows'] else 'N/A'}\n"
+                "- Query executed and verified against warehouse schema."
+            )
 
         yield {
             "event": "insight",
             "data": json.dumps({"text": insight_text})
         }
+
+        # Save to conversation memory
+        memory_manager.add_turn(
+            session_id=session_id,
+            user_query=user_query,
+            generated_sql=generated_sql,
+            insight=insight_text
+        )
 
         # Step 6: Final Complete Event
         final_payload = {
@@ -197,4 +229,18 @@ async def chat_stream_endpoint(request: ChatQueryRequest):
     if not query_text.strip():
         raise HTTPException(status_code=400, detail="Query cannot be empty.")
 
-    return EventSourceResponse(generate_chat_stream(query_text))
+    session_id = request.session_id or "default-session"
+    return EventSourceResponse(generate_chat_stream(query_text, session_id))
+
+
+@router.post("/promote-golden")
+async def promote_golden_query(request: GoldenPromotionRequest):
+    """Promotes a verified question-SQL pair into the golden dataset."""
+    new_entry = {
+        "id": len(schema_retriever.golden_queries) + 1,
+        "question": request.question,
+        "sql": request.sql,
+        "category": request.category
+    }
+    schema_retriever.golden_queries.append(new_entry)
+    return {"status": "promoted", "id": new_entry["id"]}

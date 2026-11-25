@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.routers import chat, schema
+from app.routers import chat, schema, voice
 
 logging.basicConfig(level=settings.LOG_LEVEL)
 logger = logging.getLogger("asklens")
@@ -40,6 +40,7 @@ app.add_middleware(
 # Register API Routers
 app.include_router(chat.router)
 app.include_router(schema.router)
+app.include_router(voice.router)
 
 
 @app.get("/health", tags=["Health"])

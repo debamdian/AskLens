@@ -1,0 +1,88 @@
+# ==============================================================================
+# AskLens: Semantic Layer & Business Glossary
+# ==============================================================================
+metrics:
+  revenue:
+    name: "Total Revenue"
+    description: "Total sales revenue from completed customer orders, excluding refunds and cancellations."
+    sql_expression: "COALESCE(SUM(o.total_amount), 0)"
+    filters: "o.status = 'completed'"
+    tables: ["warehouse.orders o"]
+    keywords: ["revenue", "sales", "gross sales", "income", "turnover", "total sales"]
+
+  net_revenue:
+    name: "Net Revenue"
+    description: "Completed sales revenue minus total refund amounts."
+    sql_expression: "COALESCE(SUM(o.total_amount), 0) - COALESCE(SUM(r.refund_amount), 0)"
+    filters: "o.status = 'completed'"
+    tables: ["warehouse.orders o", "warehouse.returns r"]
+    keywords: ["net revenue", "net sales", "actual sales after returns"]
+
+  order_count:
+    name: "Total Orders"
+    description: "Count of all successfully placed completed orders."
+    sql_expression: "COUNT(DISTINCT o.order_id)"
+    filters: "o.status = 'completed'"
+    tables: ["warehouse.orders o"]
+    keywords: ["orders", "order count", "total orders", "volume"]
+
+  average_order_value:
+    name: "Average Order Value (AOV)"
+    description: "Average gross revenue generated per completed order."
+    sql_expression: "ROUND(AVG(o.total_amount), 2)"
+    filters: "o.status = 'completed'"
+    tables: ["warehouse.orders o"]
+    keywords: ["aov", "average order value", "average basket size", "basket value"]
+
+  gross_profit:
+    name: "Gross Profit"
+    description: "Total revenue minus the cost of goods sold (cost_amount)."
+    sql_expression: "ROUND(SUM(oi.total_price - oi.cost_amount), 2)"
+    tables: ["warehouse.order_items oi", "warehouse.orders o"]
+    filters: "o.status = 'completed'"
+    keywords: ["gross profit", "profit", "margin", "earnings"]
+
+  return_rate:
+    name: "Return Rate"
+    description: "Percentage of orders that resulted in a refund or return."
+    sql_expression: "ROUND(COUNT(DISTINCT r.order_id)::numeric / NULLIF(COUNT(DISTINCT o.order_id), 0) * 100, 2)"
+    tables: ["warehouse.orders o", "warehouse.returns r"]
+    keywords: ["return rate", "returns", "refund rate", "cancellation rate"]
+
+  active_customers:
+    name: "Active Customers"
+    description: "Count of distinct customers who placed at least one completed order within the last 90 days."
+    sql_expression: "COUNT(DISTINCT o.customer_id)"
+    filters: "o.status = 'completed' AND o.order_date >= CURRENT_DATE - INTERVAL '90 days'"
+    tables: ["warehouse.orders o"]
+    keywords: ["active customer", "active customers", "retention", "repeat buyers"]
+
+  marketing_roas:
+    name: "Return on Ad Spend (ROAS)"
+    description: "Total revenue divided by total marketing spend in the matching region and timeframe."
+    sql_expression: "ROUND(SUM(o.total_amount) / NULLIF(SUM(m.amount), 0), 2)"
+    tables: ["warehouse.orders o", "warehouse.marketing_spend m"]
+    keywords: ["roas", "marketing efficiency", "ad spend return", "marketing roi"]
+
+dimensions:
+  region:
+    column: "r.name"
+    table: "warehouse.regions r"
+    join: "o.region_id = r.region_id"
+    sample_values: ["Gujarat", "Maharashtra", "Karnataka", "Tamil Nadu", "Delhi NCR", "West Bengal"]
+
+  category:
+    column: "p.category"
+    table: "warehouse.products p"
+    join: "oi.product_id = p.product_id"
+    sample_values: ["Electronics", "Apparel", "Home & Furniture", "Groceries", "Fitness"]
+
+  payment_method:
+    column: "o.payment_method"
+    table: "warehouse.orders o"
+    sample_values: ["UPI", "Credit Card", "Net Banking", "COD"]
+
+  shipping_channel:
+    column: "o.shipping_channel"
+    table: "warehouse.orders o"
+    sample_values: ["Express", "Standard", "Same Day"]

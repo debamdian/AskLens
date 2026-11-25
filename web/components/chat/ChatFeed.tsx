@@ -3,13 +3,14 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Send, Mic, Volume2, VolumeX, Sparkles, AlertCircle } from "lucide-react";
 import { MessageItem, MessageData } from "./MessageItem";
+import { VoiceModal } from "../voice/VoiceModal";
 
 export const ChatFeed: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<MessageData[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [ttsEnabled, setTtsEnabled] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
+  const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -268,12 +269,8 @@ export const ChatFeed: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }
         >
           <button
             type="button"
-            onClick={handleVoiceToggle}
-            className={`p-2.5 rounded-xl transition-colors ${
-              isRecording
-                ? "bg-rose-500 text-white animate-pulse"
-                : "text-slate-500 hover:text-blue-500 hover:bg-slate-200 dark:hover:bg-slate-700"
-            }`}
+            onClick={() => setIsVoiceModalOpen(true)}
+            className="p-2.5 rounded-xl text-slate-500 hover:text-blue-500 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
             title="Speak Question (Voice Input)"
           >
             <Mic className="w-4 h-4" />
@@ -301,6 +298,12 @@ export const ChatFeed: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }
           </button>
         </form>
       </div>
+      {/* Voice Input Modal */}
+      <VoiceModal
+        isOpen={isVoiceModalOpen}
+        onClose={() => setIsVoiceModalOpen(false)}
+        onConfirmTranscript={(confirmedText) => handleSend(confirmedText)}
+      />
     </div>
   );
 };
