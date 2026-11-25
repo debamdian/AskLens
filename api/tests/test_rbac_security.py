@@ -3,6 +3,8 @@
 import pytest
 from app.sql.validator import SQLValidator, SQLValidationError
 from app.security.pii_masking import mask_rows
+from app.security.rate_limit import SlidingWindowRateLimiter
+from app.security.auth import create_access_token, verify_jwt_token
 
 
 @pytest.fixture
@@ -78,3 +80,25 @@ def test_pii_masking_bypassed_for_admin():
     unmasked = mask_rows(rows, mask_pii=False)
     assert unmasked[0]["email"] == "aarav.patel@example.com"
     assert unmasked[0]["first_name"] == "Aarav"
+
+
+def test_rate_limiter_blocks_excess_requests():
+    limiter = SlidingWindowRateLimiter(max_requests=3, window_seconds=60)
+    assert limiter.is_allowed("127.0.0.1") == (True, 2)
+    assert limiter.is_allowed("127.0.0.1") == (True, 1)
+    assert limiter.is_allowed("127.0.0.1") == (True, 0)
+    assert limiter.is_allowed("127.0.0.1") == (False, 0)
+    # Different IP still allowed
+    assert limiter.is_allowed("10.0.0.2") == (True, 2)
+
+
+def test_jwt_create_and_verify():
+    token = create_access_token({"email": "admin@asklens.ai", "role": "admin"})
+    payload = verify_jwt_token(token)
+    assert payload["email"] == "admin@asklens.ai"
+    assert payload["role"] == "admin"
+
+    # Tampered token must fail
+    tampered = token[:-4] + "XXXX"
+    with pytest.raises(ValueError, match="Invalid JWT signature"):
+        verify_jwt_token(tampered)

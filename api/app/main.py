@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.routers import chat, schema, voice, admin
+from app.security.rate_limit import RateLimitMiddleware
 
 logging.basicConfig(level=settings.LOG_LEVEL)
 logger = logging.getLogger("asklens")
@@ -36,6 +37,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RateLimitMiddleware, max_requests=60, window_seconds=60)
 
 # Register API Routers
 app.include_router(chat.router)
