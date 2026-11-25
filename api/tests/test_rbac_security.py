@@ -2,6 +2,7 @@
 
 import pytest
 from app.sql.validator import SQLValidator, SQLValidationError
+from app.security.pii_masking import mask_rows
 
 
 @pytest.fixture
@@ -50,3 +51,30 @@ def test_cte_alias_not_flagged_as_disallowed_table(validator):
     """
     sanitized = validator.validate_and_sanitize(sql, role_name="sales_manager")
     assert "regional_orders" in sanitized.lower()
+
+
+def test_pii_masking_masks_sensitive_fields():
+    rows = [
+        {
+            "customer_id": 1,
+            "first_name": "Aarav",
+            "last_name": "Patel",
+            "email": "aarav.patel@example.com",
+            "phone": "+91-9876543210",
+            "city": "Ahmedabad",
+        }
+    ]
+    masked = mask_rows(rows, mask_pii=True)
+    assert masked[0]["first_name"] == "A***"
+    assert masked[0]["last_name"] == "P***"
+    assert masked[0]["email"] == "a***@example.com"
+    assert masked[0]["phone"].endswith("3210")
+    assert "987654" not in masked[0]["phone"]
+    assert masked[0]["city"] == "Ahmedabad"
+
+
+def test_pii_masking_bypassed_for_admin():
+    rows = [{"email": "aarav.patel@example.com", "first_name": "Aarav"}]
+    unmasked = mask_rows(rows, mask_pii=False)
+    assert unmasked[0]["email"] == "aarav.patel@example.com"
+    assert unmasked[0]["first_name"] == "Aarav"
