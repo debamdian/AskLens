@@ -1,0 +1,52 @@
+# Role-Based Access Control (RBAC) & Row-Level Security (RLS) Policy
+# Defines table/column allowlists and row-level filters per user role.
+
+roles:
+  admin:
+    description: "Full analytical access across all warehouse tables and admin dashboard."
+    allowed_tables:
+      - "regions"
+      - "customers"
+      - "products"
+      - "orders"
+      - "order_items"
+      - "returns"
+      - "marketing_spend"
+    denied_columns: {}
+    mask_pii: false
+    rls_region_scoped: false
+
+  analyst:
+    description: "Senior data analyst with access to all warehouse tables; direct PII contact fields restricted."
+    allowed_tables:
+      - "regions"
+      - "customers"
+      - "products"
+      - "orders"
+      - "order_items"
+      - "returns"
+      - "marketing_spend"
+    denied_columns:
+      customers:
+        - "email"
+        - "phone"
+    mask_pii: true
+    rls_region_scoped: false
+
+  sales_manager:
+    description: "Regional sales manager limited to sales/order tables and assigned region."
+    allowed_tables:
+      - "regions"
+      - "customers"
+      - "products"
+      - "orders"
+      - "order_items"
+      - "returns"
+    denied_columns:
+      customers:
+        - "email"
+        - "phone"
+        - "first_name"
+        - "last_name"
+    mask_pii: true
+    rls_region_scoped: true

@@ -10,10 +10,11 @@ Enforces:
 7. Validates estimated execution cost via EXPLAIN.
 """
 
-from typing import List, Optional, Tuple
+from typing import List, Optional, Set, Tuple
 import sqlglot
 from sqlglot import exp
 from app.core.config import settings
+from app.security.rbac import rbac_manager
 
 # Banned functions that pose security risks or DoS vectors
 DANGEROUS_FUNCTIONS = {
@@ -61,10 +62,10 @@ class SQLValidator:
         self.max_limit = max_limit or settings.MAX_ROW_LIMIT
         self.max_cost = max_cost or settings.MAX_QUERY_COST
 
-    def validate_and_sanitize(self, sql_query: str) -> str:
-        """Parses AST, validates security constraints, injects LIMIT, and returns safe SQL.
+    def validate_and_sanitize(self, sql_query: str, role_name: Optional[str] = None) -> str:
+        """Parses AST, validates security & RBAC constraints, injects LIMIT, and returns safe SQL.
         
-        Raises SQLValidationError if query is unsafe.
+        Raises SQLValidationError if query is unsafe or violates role permissions.
         """
         clean_sql = sql_query.strip().rstrip(";")
 
@@ -100,7 +101,17 @@ class SQLValidator:
             if isinstance(node, disallowed_nodes):
                 raise SQLValidationError(f"Disallowed command or statement type: '{node.key.upper()}'.")
 
-        # 6. Check Table and Schema References
+        # 6. Check Table and Schema References (plus optional RBAC allowlist)
+        cte_names: Set[str] = {
+            cte.alias_or_name.lower()
+            for cte in expression.find_all(exp.CTE)
+            if cte.alias_or_name
+        }
+        referenced_tables: Set[str] = set()
+        alias_to_table: dict[str, str] = {}
+
+        policy = rbac_manager.get_policy(role_name) if role_name else None
+
         for table in expression.find_all(exp.Table):
             db = table.db.lower() if table.db else ""
             table_name = table.name.lower()
@@ -110,6 +121,44 @@ class SQLValidator:
 
             if table_name.startswith("pg_"):
                 raise SQLValidationError(f"Access to internal system table '{table_name}' is forbidden.")
+
+            if not db and table_name in cte_names:
+                continue
+
+            referenced_tables.add(table_name)
+            if table.alias_or_name:
+                alias_to_table[table.alias_or_name.lower()] = table_name
+
+            if policy and not policy.is_table_allowed(table_name):
+                raise SQLValidationError(
+                    f"Access denied: role '{policy.name}' is not authorized to query table '{table_name}'."
+                )
+
+        # 6b. Check RBAC Column Restrictions
+        if policy and policy.denied_columns:
+            restricted_tables_in_query = [
+                t for t in referenced_tables if t in policy.denied_columns
+            ]
+            if restricted_tables_in_query:
+                if any(expression.find_all(exp.Star)):
+                    raise SQLValidationError(
+                        f"Access denied: role '{policy.name}' cannot use SELECT * on restricted table(s): {', '.join(sorted(restricted_tables_in_query))}."
+                    )
+                for col in expression.find_all(exp.Column):
+                    col_name = col.name.lower()
+                    col_tbl = col.table.lower() if col.table else None
+                    resolved_tbl = alias_to_table.get(col_tbl, col_tbl) if col_tbl else None
+                    if resolved_tbl:
+                        if policy.is_column_denied(resolved_tbl, col_name):
+                            raise SQLValidationError(
+                                f"Access denied: role '{policy.name}' cannot access column '{resolved_tbl}.{col_name}'."
+                            )
+                    else:
+                        for rt in restricted_tables_in_query:
+                            if policy.is_column_denied(rt, col_name):
+                                raise SQLValidationError(
+                                    f"Access denied: role '{policy.name}' cannot access column '{col_name}' on table '{rt}'."
+                                )
 
         # 7. Check for Dangerous Functions
         for func in expression.find_all(exp.Func, exp.Anonymous):

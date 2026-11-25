@@ -23,10 +23,10 @@ class SafeSQLExecutor:
         self.validator = validator or SQLValidator()
         self.connector = connector or warehouse_connector
 
-    def execute(self, raw_sql: str) -> QueryResult:
+    def execute(self, raw_sql: str, role_name: Optional[str] = None) -> QueryResult:
         """Full pipeline: AST validation -> Cost Estimation -> Read-only DB Execution."""
-        # 1. AST Validation & LIMIT injection
-        sanitized_sql = self.validator.validate_and_sanitize(raw_sql)
+        # 1. AST Validation, RBAC enforcement & LIMIT injection
+        sanitized_sql = self.validator.validate_and_sanitize(raw_sql, role_name=role_name)
 
         # 2. Pre-execution Cost Check (if database is connected)
         try:
