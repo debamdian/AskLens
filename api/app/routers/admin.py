@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, Depends, Query
 from app.security.audit import audit_logger
 from app.security.rbac import rbac_manager
-from app.schema.retriever import golden_retriever
+from app.schema.retriever import schema_retriever
 
 router = APIRouter(prefix="/api/v1/admin", tags=["Admin"])
 
@@ -20,8 +20,8 @@ def list_audit_logs(limit: int = Query(50, ge=1, le=200)) -> Dict[str, Any]:
 def list_golden_queries() -> Dict[str, Any]:
     """Return all golden question -> SQL pairs."""
     return {
-        "golden_queries": golden_retriever.golden_queries,
-        "count": len(golden_retriever.golden_queries),
+        "golden_queries": schema_retriever.golden_queries,
+        "count": len(schema_retriever.golden_queries),
     }
 
 
