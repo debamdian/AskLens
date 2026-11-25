@@ -61,7 +61,10 @@ class IntentRouter:
         clean = user_query.strip().lower()
 
         # Fast-path heuristics for chitchat
-        if clean in ["hi", "hello", "hey", "good morning", "good evening", "who are you", "help"]:
+        if (
+            clean in ["hi", "hello", "hey", "good morning", "good evening", "who are you", "help"]
+            or clean.startswith(("hello,", "hi,", "thanks", "thank you"))
+        ):
             return RouteDecision(
                 intent="chitchat",
                 confidence=1.0,
@@ -69,7 +72,20 @@ class IntentRouter:
             )
 
         # Fast-path heuristics for unsafe attempts
-        if any(w in clean for w in ["drop table", "truncate", "pg_shadow", "information_schema", "ignore previous instructions"]):
+        if any(
+            w in clean
+            for w in [
+                "drop table",
+                "truncate",
+                "delete from",
+                "pg_shadow",
+                "pg_catalog",
+                "pg_sleep",
+                "information_schema",
+                "app.users",
+                "ignore previous instructions",
+            ]
+        ) or re.search(r"\bupdate\s+\S+\s+set\b", clean):
             return RouteDecision(
                 intent="unsafe",
                 confidence=1.0,
@@ -77,7 +93,7 @@ class IntentRouter:
             )
 
         # Fast-path heuristics for forecasting
-        if any(w in clean for w in ["forecast", "predict", "projection", "next 3 months", "next quarter"]):
+        if any(w in clean for w in ["forecast", "predict", "projection", "project ", "expected revenue", "next 3 months", "next quarter"]):
             return RouteDecision(
                 intent="forecast",
                 confidence=0.95,
@@ -85,7 +101,7 @@ class IntentRouter:
             )
 
         # Fast-path for diagnostic questions
-        if clean.startswith("why ") or "why did" in clean or "root cause" in clean or "reason for" in clean:
+        if clean.startswith("why ") or "why did" in clean or "what caused" in clean or "investigate why" in clean or "root cause" in clean or "reason for" in clean:
             return RouteDecision(
                 intent="deep_analysis",
                 confidence=0.95,
