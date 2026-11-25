@@ -152,6 +152,7 @@ def seed_database():
         order_items_batch = []
         returns_batch = []
         marketing_batch = []
+        order_seq = 0
 
         # Current reference time = 2024-12-01
         base_date = datetime(2023, 1, 1)
@@ -196,8 +197,9 @@ def seed_database():
                 region_custs = cust_by_region.get(r_id, [c[0] for c in customers])
 
                 for _ in range(num_orders):
+                    order_seq += 1
                     c_id = random.choice(region_custs)
-                    order_num = f"ORD-{current_date.strftime('%Y%m%d')}-{random.randint(100000, 999999)}"
+                    order_num = f"ORD-{current_date.strftime('%Y%m%d')}-{order_seq:06d}"
                     order_time = current_date + timedelta(hours=random.randint(8, 21), minutes=random.randint(0, 59))
                     pay_method = random.choice(["UPI", "Credit Card", "Net Banking", "COD"])
                     ship_channel = random.choice(["Express", "Standard", "Same Day"])
