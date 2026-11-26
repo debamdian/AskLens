@@ -10,6 +10,7 @@ import os
 import tempfile
 import logging
 from typing import Dict, Any, Optional
+import numpy as np
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,24 @@ class VoiceTranscriber:
                 logger.warning(f"Could not load faster-whisper model: {e}")
                 self.model = None
 
+    @staticmethod
+    def _decode_audio_16k(file_path: str) -> np.ndarray:
+        """Decode audio file to 16kHz mono float32 using PyAV (compatible with av>=19)."""
+        import av
+
+        resampler = av.AudioResampler(format="fltp", layout="mono", rate=16000)
+        chunks = []
+        with av.open(file_path, mode="r") as container:
+            for frame in container.decode(audio=0):
+                for resampled in resampler.resample(frame):
+                    chunks.append(resampled.to_ndarray().reshape(-1))
+            for resampled in resampler.resample(None):
+                chunks.append(resampled.to_ndarray().reshape(-1))
+
+        if not chunks:
+            return np.zeros(0, dtype=np.float32)
+        return np.concatenate(chunks).astype(np.float32)
+
     def transcribe_audio_bytes(
         self,
         audio_bytes: bytes,
@@ -62,8 +81,14 @@ class VoiceTranscriber:
 
         try:
             if self.model is not None:
+                audio_input: Any = tmp_path
+                try:
+                    audio_input = self._decode_audio_16k(tmp_path)
+                except Exception as decode_err:
+                    logger.warning(f"PyAV custom decode failed, falling back to path: {decode_err}")
+
                 segments, info = self.model.transcribe(
-                    tmp_path,
+                    audio_input,
                     beam_size=5,
                     initial_prompt=GLOSSARY_VOCAB_PROMPT
                 )
