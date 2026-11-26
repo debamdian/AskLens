@@ -37,25 +37,26 @@ class SeniorAnalystPlanner:
     def __init__(self, llm=None):
         self.llm = llm or llm_service
 
-    def plan_analysis(self, question: str) -> List[str]:
+    def plan_analysis(self, question: str, use_llm: bool = False) -> List[str]:
         """Generates analysis steps for a diagnostic question."""
-        prompt = PLANNER_DECOMPOSITION_PROMPT.format(question=question)
-        try:
-            res = self.llm.generate(prompt=prompt, temperature=0.0)
-            import re
-            json_match = re.search(r"\[[\s\S]*\]", res)
-            if json_match:
-                steps = json.loads(json_match.group(0))
-                if isinstance(steps, list) and len(steps) > 0:
-                    return [str(s) for s in steps]
-        except Exception:
-            pass
+        if use_llm:
+            prompt = PLANNER_DECOMPOSITION_PROMPT.format(question=question)
+            try:
+                res = self.llm.generate(prompt=prompt, temperature=0.0)
+                import re
+                json_match = re.search(r"\[[\s\S]*\]", res)
+                if json_match:
+                    steps = json.loads(json_match.group(0))
+                    if isinstance(steps, list) and len(steps) > 0:
+                        return [str(s) for s in steps]
+            except Exception:
+                pass
 
-        # Deterministic diagnostic default
+        # Fast deterministic diagnostic decomposition (<1ms)
         return [
             f"Establish baseline & comparison periods for: '{question}'",
-            "Perform dimensional breakdown across product categories and sales channels",
-            "Examine external drivers: marketing spend cutbacks and return rate spikes",
+            "Perform dimensional breakdown across regions, product categories, and channels",
+            "Examine external drivers: marketing spend shifts, stockouts, and return rate spikes",
             "Quantify driver contribution and synthesize evidence-backed root cause"
         ]
 

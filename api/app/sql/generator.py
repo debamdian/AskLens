@@ -5,6 +5,7 @@ the LLM service to produce executable PostgreSQL queries.
 """
 
 import re
+import time
 from typing import Optional
 from app.llm.factory import llm_service
 from app.schema.crawler import crawler
@@ -29,15 +30,27 @@ DATABASE SCHEMA:
 class SQLGenerator:
     """Generates SQL queries based on user requests and schema intelligence."""
 
-    def __init__(self, schema_crawler=None, llm=None):
+    def __init__(self, schema_crawler=None, llm=None, schema_ttl_seconds: int = 300):
         self.crawler = schema_crawler or crawler
         self.llm = llm or llm_service
+        self._schema_ttl = schema_ttl_seconds
+        self._cached_schema: Optional[str] = None
+        self._schema_cached_at: float = 0.0
+
+    def _get_schema_context(self) -> str:
+        now = time.monotonic()
+        if self._cached_schema and (now - self._schema_cached_at) < self._schema_ttl:
+            return self._cached_schema
+        schema_context = self.crawler.get_prompt_formatted_schema()
+        self._cached_schema = schema_context
+        self._schema_cached_at = now
+        return schema_context
 
     def generate_sql(self, question: str, additional_context: Optional[str] = None) -> str:
         """Generates SQL query for a user question."""
-        # 1. Fetch prompt-formatted schema context
+        # 1. Fetch cached prompt-formatted schema context
         try:
-            schema_context = self.crawler.get_prompt_formatted_schema()
+            schema_context = self._get_schema_context()
         except Exception:
             # Fallback static context if database is offline
             schema_context = """

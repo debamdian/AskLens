@@ -32,7 +32,7 @@ class ResilientLLMService:
         prompt: str,
         system_prompt: Optional[str] = None,
         temperature: float = 0.0,
-        max_retries: int = 2
+        max_retries: int = 1
     ) -> str:
         """Attempts generation with primary provider, then retries with backoff, then falls back."""
         attempt_providers = [self.primary_name]
@@ -58,7 +58,7 @@ class ResilientLLMService:
                         f"LLM Provider {prov_name} attempt {attempt + 1} failed: {e}"
                     )
                     if attempt < max_retries:
-                        time.sleep(1.5 * (attempt + 1))  # Exponential backoff
+                        time.sleep(0.5 * (attempt + 1))  # Short backoff on transient 503/429
 
         raise RuntimeError(f"All configured LLM providers failed. Last error: {last_error}")
 

@@ -64,7 +64,7 @@ async def generate_chat_stream(
         }
         await asyncio.sleep(0.05)
 
-        route_decision = intent_router.route(user_query)
+        route_decision = await asyncio.to_thread(intent_router.route, user_query)
 
         # Ambiguity Handling: If ambiguous, ask ONE clarifying question with options
         if route_decision.intent == "clarify":
@@ -159,7 +159,8 @@ async def generate_chat_stream(
         await asyncio.sleep(0.05)
 
         try:
-            generated_sql = sql_generator.generate_sql(
+            generated_sql = await asyncio.to_thread(
+                sql_generator.generate_sql,
                 question=user_query,
                 additional_context=combined_context
             )
@@ -186,7 +187,8 @@ async def generate_chat_stream(
         await asyncio.sleep(0.05)
 
         try:
-            query_result, final_sql, retries = self_corrector.execute_with_self_correction(
+            query_result, final_sql, retries = await asyncio.to_thread(
+                self_corrector.execute_with_self_correction,
                 question=user_query,
                 initial_sql=generated_sql
             )
@@ -254,7 +256,8 @@ async def generate_chat_stream(
             "data": json.dumps({"status": "synthesizing", "message": "Synthesizing executive findings with evidence..."})
         }
 
-        insight_text = insight_synthesizer.synthesize(
+        insight_text = await asyncio.to_thread(
+            insight_synthesizer.synthesize,
             question=user_query,
             intent=route_decision.intent,
             sql=generated_sql,
