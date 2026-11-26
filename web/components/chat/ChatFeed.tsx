@@ -81,67 +81,76 @@ export const ChatFeed: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }
       const decoder = new TextDecoder();
       let buffer = "";
 
+      const processBlock = (block: string) => {
+        if (!block.trim()) return;
+
+        let eventType = "message";
+        let dataStr = "";
+
+        for (const line of block.split(/\r?\n/)) {
+          if (line.startsWith("event:")) {
+            eventType = line.slice(6).trim();
+          } else if (line.startsWith("data:")) {
+            dataStr = line.slice(5).trim();
+          }
+        }
+
+        if (!dataStr) return;
+
+        try {
+          const parsedData = JSON.parse(dataStr);
+
+          setMessages((prev) =>
+            prev.map((msg) => {
+              if (msg.id !== assistantMsgId) return msg;
+
+              const updated = { ...msg };
+
+              if (eventType === "status") {
+                updated.status = parsedData.status;
+                updated.statusMessage = parsedData.message;
+              } else if (eventType === "plan") {
+                updated.plan = parsedData;
+              } else if (eventType === "sql") {
+                updated.sql = parsedData.sql;
+              } else if (eventType === "rows") {
+                updated.rowsData = parsedData;
+              } else if (eventType === "chart") {
+                updated.chartSpec = parsedData;
+              } else if (eventType === "insight") {
+                updated.insight = parsedData.text;
+                speakText(parsedData.text);
+              } else if (eventType === "final") {
+                updated.status = "completed";
+                updated.followUps = parsedData.follow_ups;
+              } else if (eventType === "error") {
+                updated.status = "completed";
+                updated.insight = `⚠️ Analysis Error: ${parsedData.error}`;
+              }
+
+              return updated;
+            })
+          );
+        } catch (e) {
+          console.error("Error parsing SSE JSON payload:", e);
+        }
+      };
+
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+          if (buffer.trim()) {
+            processBlock(buffer);
+          }
+          break;
+        }
 
-        buffer += decoder.decode(value, { stream: true });
+        buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
         const lines = buffer.split("\n\n");
         buffer = lines.pop() || "";
 
         for (const block of lines) {
-          if (!block.trim()) continue;
-
-          let eventType = "message";
-          let dataStr = "";
-
-          for (const line of block.split("\n")) {
-            if (line.startsWith("event:")) {
-              eventType = line.replace("event:", "").trim();
-            } else if (line.startsWith("data:")) {
-              dataStr = line.replace("data:", "").trim();
-            }
-          }
-
-          if (!dataStr) continue;
-
-          try {
-            const parsedData = JSON.parse(dataStr);
-
-            setMessages((prev) =>
-              prev.map((msg) => {
-                if (msg.id !== assistantMsgId) return msg;
-
-                const updated = { ...msg };
-
-                if (eventType === "status") {
-                  updated.status = parsedData.status;
-                  updated.statusMessage = parsedData.message;
-                } else if (eventType === "plan") {
-                  updated.plan = parsedData;
-                } else if (eventType === "sql") {
-                  updated.sql = parsedData.sql;
-                } else if (eventType === "rows") {
-                  updated.rowsData = parsedData;
-                } else if (eventType === "chart") {
-                  updated.chartSpec = parsedData;
-                } else if (eventType === "insight") {
-                  updated.insight = parsedData.text;
-                  speakText(parsedData.text);
-                } else if (eventType === "final") {
-                  updated.status = "completed";
-                  updated.followUps = parsedData.follow_ups;
-                } else if (eventType === "error") {
-                  updated.status = "completed";
-                  updated.insight = `⚠️ Analysis Error: ${parsedData.error}`;
-                }
-
-                return updated;
-              })
-            );
-          } catch (e) {
-            console.error("Error parsing SSE JSON payload:", e);
-          }
+          processBlock(block);
         }
       }
     } catch (err: any) {
