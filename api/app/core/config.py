@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     # OpenAI-Compatible (Groq / OpenRouter)
     OPENAI_COMPAT_BASE_URL: str = "https://api.groq.com/openai/v1"
     OPENAI_COMPAT_API_KEY: Optional[str] = None
-    OPENAI_COMPAT_MODEL: str = "llama-3.3-70b-versatile"
+    OPENAI_COMPAT_MODEL: str = "openai/gpt-oss-120b"
 
     # Security
     JWT_SECRET: str = "super_secret_jwt_key_change_me_in_production_min_32_chars"

@@ -17,7 +17,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
     ):
         self.base_url = (base_url or settings.OPENAI_COMPAT_BASE_URL).rstrip("/")
         self.api_key = api_key or settings.OPENAI_COMPAT_API_KEY
-        self.model = model or settings.OPENAI_COMPAT_MODEL or "llama-3.3-70b-versatile"
+        self.model = model or settings.OPENAI_COMPAT_MODEL or "openai/gpt-oss-120b"
 
     def is_available(self) -> bool:
         return bool(self.api_key and len(self.api_key.strip()) > 0)
